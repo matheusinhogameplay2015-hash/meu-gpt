@@ -2,6 +2,7 @@ const express = require("express")
 const fs = require("fs")
 const wiki = require("wikipedia")
 wiki.setLang("pt")
+let conversa = {}
 
 const app = express()
 
@@ -15,7 +16,24 @@ if (fs.existsSync("memoria.json")) {
 }
 
 app.post("/chat", async (req, res) => {
+if(texto.startsWith("meu nome é ")){
 
+let nome = texto.replace("meu nome é ","")
+
+conversa.nome = nome
+
+return res.json({resposta:"Ok, vou lembrar que seu nome é "+nome})
+}
+
+if(texto.includes("qual meu nome")){
+
+if(conversa.nome){
+return res.json({resposta:"Seu nome é "+conversa.nome})
+}else{
+return res.json({resposta:"Você ainda não me disse seu nome"})
+}
+
+}
   let texto = req.body.msg.toLowerCase()
 
   // aprender
@@ -64,4 +82,5 @@ if (texto.startsWith("wiki ")) {
 
 app.listen(3000, () => {
   console.log("GPT rodando")
+
 })
