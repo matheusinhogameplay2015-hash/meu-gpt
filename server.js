@@ -1,6 +1,9 @@
 const express = require("express")
 const fs = require("fs")
 const similarity = require("string-similarity")
+const google = require("googlethis")
+const joke = require("one-liner-joke")
+const { pipeline } = require("@xenova/transformers")
 
 const app = express()
 
@@ -13,6 +16,16 @@ if (fs.existsSync("memoria.json")) {
   memoria = JSON.parse(fs.readFileSync("memoria.json"))
 }
 
+// carregar IA
+let gerador
+
+async function carregarIA(){
+  gerador = await pipeline("text-generation", "Xenova/gpt2")
+  console.log("IA carregada")
+}
+
+carregarIA()
+
 app.post("/chat", async (req, res) => {
 
   let texto = req.body.msg
@@ -20,7 +33,7 @@ app.post("/chat", async (req, res) => {
   .normalize("NFD")
   .replace(/[\u0300-\u036f]/g, "")
 
-  // sistema de aprendizado
+  // aprender respostas
   if (texto.startsWith("aprender=")) {
 
     let dados = texto.replace("aprender=", "").split("|")
@@ -33,6 +46,33 @@ app.post("/chat", async (req, res) => {
 
       return res.json({ resposta: "Aprendi 👍" })
     }
+
+  }
+
+  // piada
+  if (texto.includes("piada")) {
+
+    let piada = joke.getRandomJoke().body
+
+    return res.json({ resposta: piada })
+
+  }
+
+  // pesquisa google
+  if (texto.startsWith("pesquisar ")) {
+
+    let busca = texto.replace("pesquisar ", "")
+
+    let resultados = await google.search(busca)
+
+    if (resultados.results.length > 0) {
+
+      return res.json({
+        resposta: resultados.results[0].title + " - " + resultados.results[0].description
+      })
+
+    }
+
   }
 
   // procurar pergunta parecida
@@ -42,15 +82,17 @@ app.post("/chat", async (req, res) => {
 
     let match = similarity.findBestMatch(texto, perguntas)
 
-    if (match.bestMatch.rating > 0.5) {
+    if (match.bestMatch.rating > 0.7) {
 
       let perguntaCorrigida = match.bestMatch.target
 
       return res.json({ resposta: memoria[perguntaCorrigida] })
+
     }
+
   }
 
-  // busca na wikipedia
+  // wikipedia
   try {
 
     let url = "https://pt.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(texto)
@@ -69,7 +111,19 @@ app.post("/chat", async (req, res) => {
 
   } catch (erro) {}
 
-  // resposta padrão
+  // IA gerar resposta
+  if (gerador) {
+
+    let respostaIA = await gerador(texto, {
+      max_new_tokens: 40
+    })
+
+    return res.json({
+      resposta: respostaIA[0].generated_text
+    })
+
+  }
+
   res.json({ resposta: "Ainda não sei responder isso." })
 
 })
