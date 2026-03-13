@@ -2,7 +2,7 @@ const express = require("express")
 const fs = require("fs")
 const similarity = require("string-similarity")
 const google = require("googlethis")
-const joke = require("one-liner-joke")
+const { pipeline } = require("@xenova/transformers")
 
 const app = express()
 
@@ -15,6 +15,28 @@ if (fs.existsSync("memoria.json")) {
   memoria = JSON.parse(fs.readFileSync("memoria.json"))
 }
 
+// piadas em português
+const piadas = [
+"Por que o programador foi ao médico? Porque ele tinha muitos bugs.",
+"Por que o computador foi preso? Porque executou processos ilegais.",
+"Quantos programadores trocam uma lâmpada? Nenhum, é problema de hardware.",
+"O que o JavaScript disse para o HTML? Você me completa.",
+"Por que o JavaScript foi ao terapeuta? Porque tinha muitos callbacks."
+]
+
+// IA pequena
+let gerador
+
+async function carregarIA(){
+  gerador = await pipeline(
+    "text-generation",
+    "Xenova/distilgpt2"
+  )
+  console.log("IA carregada")
+}
+
+carregarIA()
+
 app.post("/chat", async (req, res) => {
 
   let texto = req.body.msg
@@ -22,7 +44,7 @@ app.post("/chat", async (req, res) => {
   .normalize("NFD")
   .replace(/[\u0300-\u036f]/g, "")
 
-  // aprender resposta
+  // aprender
   if (texto.startsWith("aprender=")) {
 
     let dados = texto.replace("aprender=", "").split("|")
@@ -39,16 +61,16 @@ app.post("/chat", async (req, res) => {
 
   }
 
-  // piada
+  // piadas
   if (texto.includes("piada")) {
 
-    let piada = joke.getRandomJoke().body
+    let piada = piadas[Math.floor(Math.random()*piadas.length)]
 
     return res.json({ resposta: piada })
 
   }
 
-  // pesquisa google
+  // pesquisa
   if (texto.startsWith("pesquisar ")) {
 
     let busca = texto.replace("pesquisar ", "")
@@ -65,7 +87,7 @@ app.post("/chat", async (req, res) => {
 
   }
 
-  // procurar pergunta parecida
+  // memória
   let perguntas = Object.keys(memoria)
 
   if (perguntas.length > 0) {
@@ -74,9 +96,9 @@ app.post("/chat", async (req, res) => {
 
     if (match.bestMatch.rating > 0.7) {
 
-      let perguntaCorrigida = match.bestMatch.target
-
-      return res.json({ resposta: memoria[perguntaCorrigida] })
+      return res.json({
+        resposta: memoria[match.bestMatch.target]
+      })
 
     }
 
@@ -99,7 +121,20 @@ app.post("/chat", async (req, res) => {
 
     }
 
-  } catch (erro) {}
+  } catch {}
+
+  // IA
+  if (gerador) {
+
+    let respostaIA = await gerador(texto, {
+      max_new_tokens: 30
+    })
+
+    return res.json({
+      resposta: respostaIA[0].generated_text
+    })
+
+  }
 
   res.json({ resposta: "Ainda não sei responder isso." })
 
