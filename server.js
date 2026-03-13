@@ -3,7 +3,6 @@ const fs = require("fs")
 const similarity = require("string-similarity")
 const google = require("googlethis")
 const joke = require("one-liner-joke")
-const { pipeline } = require("@xenova/transformers")
 
 const app = express()
 
@@ -16,16 +15,6 @@ if (fs.existsSync("memoria.json")) {
   memoria = JSON.parse(fs.readFileSync("memoria.json"))
 }
 
-// carregar IA
-let gerador
-
-async function carregarIA(){
-  gerador = await pipeline("text-generation", "Xenova/gpt2")
-  console.log("IA carregada")
-}
-
-carregarIA()
-
 app.post("/chat", async (req, res) => {
 
   let texto = req.body.msg
@@ -33,7 +22,7 @@ app.post("/chat", async (req, res) => {
   .normalize("NFD")
   .replace(/[\u0300-\u036f]/g, "")
 
-  // aprender respostas
+  // aprender resposta
   if (texto.startsWith("aprender=")) {
 
     let dados = texto.replace("aprender=", "").split("|")
@@ -45,6 +34,7 @@ app.post("/chat", async (req, res) => {
       fs.writeFileSync("memoria.json", JSON.stringify(memoria, null, 2))
 
       return res.json({ resposta: "Aprendi 👍" })
+
     }
 
   }
@@ -110,19 +100,6 @@ app.post("/chat", async (req, res) => {
     }
 
   } catch (erro) {}
-
-  // IA gerar resposta
-  if (gerador) {
-
-    let respostaIA = await gerador(texto, {
-      max_new_tokens: 40
-    })
-
-    return res.json({
-      resposta: respostaIA[0].generated_text
-    })
-
-  }
 
   res.json({ resposta: "Ainda não sei responder isso." })
 
