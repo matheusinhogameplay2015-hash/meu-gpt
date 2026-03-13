@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<body>
+
+<h2>Meu GPT</h2>
+
+<div id="chat"></div>
+
+<input id="msg">
+<button onclick="enviar()">Enviar</button>
+
+<script>
+
+async function enviar(){
+
+let texto=document.getElementById("msg").value
+
+let res=await fetch("/chat",{
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({msg:texto})
+})
+
+let data=await res.json()
+
+let chat=document.getElementById("chat")
+
+chat.innerHTML+="<p><b>Você:</b> "+texto+"</p>"
+chat.innerHTML+="<p><b>GPT:</b> "+data.resposta+"</p>"
+
+}
+
+</script>
+
+</body>
+</html>
