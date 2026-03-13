@@ -1,8 +1,6 @@
 const express = require("express")
 const fs = require("fs")
-const wiki = require("wikipedia")
-wiki.setLang("pt")
-
+const similarity = require("string-similarity")
 
 const app = express()
 
@@ -17,55 +15,67 @@ if (fs.existsSync("memoria.json")) {
 
 app.post("/chat", async (req, res) => {
 
-}
-  let texto = req.body.msg.toLowerCase()
+  let texto = req.body.msg
+  .toLowerCase()
+  .normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "")
 
-  // aprender
+  // sistema de aprendizado
   if (texto.startsWith("aprender=")) {
 
     let dados = texto.replace("aprender=", "").split("|")
 
-    memoria[dados[0]] = dados[1]
+    if (dados.length == 2) {
 
-    fs.writeFileSync("memoria.json", JSON.stringify(memoria, null, 2))
+      memoria[dados[0]] = dados[1]
 
-    return res.json({ resposta: "Aprendi 👍" })
+      fs.writeFileSync("memoria.json", JSON.stringify(memoria, null, 2))
+
+      return res.json({ resposta: "Aprendi 👍" })
+    }
   }
 
-  // wikipedia
-if (texto.startsWith("wiki ")) {
+  // procurar pergunta parecida
+  let perguntas = Object.keys(memoria)
 
-  let busca = texto.replace("wiki ", "")
+  if (perguntas.length > 0) {
 
+    let match = similarity.findBestMatch(texto, perguntas)
+
+    if (match.bestMatch.rating > 0.5) {
+
+      let perguntaCorrigida = match.bestMatch.target
+
+      return res.json({ resposta: memoria[perguntaCorrigida] })
+    }
+  }
+
+  // busca na wikipedia
   try {
 
-    let url = "https://pt.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(busca)
+    let url = "https://pt.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(texto)
 
     let respostaWiki = await fetch(url)
 
     let data = await respostaWiki.json()
 
-    if(data.extract){
-      return res.json({resposta:data.extract.substring(0,500)})
-    }else{
-      return res.json({resposta:"Não encontrei na Wikipedia"})
+    if (data.extract) {
+
+      return res.json({
+        resposta: data.extract.substring(0, 400)
+      })
+
     }
 
-  } catch {
+  } catch (erro) {}
 
-    return res.json({resposta:"Erro ao buscar na Wikipedia"})
-
-  }
-
-}
-  let resposta = memoria[texto] || "Não sei responder"
-
-  res.json({ resposta })
+  // resposta padrão
+  res.json({ resposta: "Ainda não sei responder isso." })
 
 })
 
-app.listen(3000, () => {
-  console.log("GPT rodando")
+const PORT = process.env.PORT || 3000
 
+app.listen(PORT, () => {
+  console.log("GPT rodando na porta " + PORT)
 })
-
