@@ -11,6 +11,12 @@
 
 <script>
 
+function falar(texto){
+  const fala = new SpeechSynthesisUtterance(texto)
+  fala.lang = "pt-BR"
+  speechSynthesis.speak(fala)
+}
+
 async function enviar(){
 
 let texto=document.getElementById("msg").value
@@ -28,9 +34,12 @@ let chat=document.getElementById("chat")
 chat.innerHTML+="<p><b>Você:</b> "+texto+"</p>"
 chat.innerHTML+="<p><b>GPT:</b> "+data.resposta+"</p>"
 
+falar(data.resposta)
+
 }
 
 </script>
 
 </body>
+
 </html>
