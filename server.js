@@ -136,7 +136,7 @@ fs.writeFileSync(
 JSON.stringify(memoria,null,2)
 )
 
-return res.json({resposta:"Aprendi 👍"})
+return res.json({resposta:"Aprendi :) 👍"})
 }
 
 }
