@@ -1,147 +1,247 @@
-const express = require("express")
-const fs = require("fs")
-const similarity = require("string-similarity")
-const google = require("googlethis")
-const { pipeline } = require("@xenova/transformers")
+import express from "express"
+import session from "express-session"
+import fs from "fs"
+import stringSimilarity from "string-similarity"
+import google from "googlethis"
+import { pipeline } from "@xenova/transformers"
 
 const app = express()
 
 app.use(express.json())
-app.use(express.static("."))
+app.use(express.urlencoded({ extended: true }))
 
+app.use(session({
+  secret: process.env.SESSION_SECRET || "segredo",
+  resave: false,
+  saveUninitialized: true
+}))
+
+// piadas
+const piadas = [
+"Por que o programador foi ao médico? Porque tinha muitos bugs.",
+"O que o JavaScript disse para o HTML? Você me completa.",
+"Por que o computador foi preso? Porque executou processos ilegais.",
+"Quantos programadores trocam uma lâmpada? Nenhum, é problema de hardware.",
+"Por que o programador confundiu Halloween e Natal? Porque OCT 31 = DEC 25."
+]
+
+// memória
 let memoria = {}
 
 if (fs.existsSync("memoria.json")) {
   memoria = JSON.parse(fs.readFileSync("memoria.json"))
 }
 
-// piadas em português
-const piadas = [
-"Por que o programador foi ao médico? Porque ele tinha muitos bugs.",
-"Por que o computador foi preso? Porque executou processos ilegais.",
-"Quantos programadores trocam uma lâmpada? Nenhum, é problema de hardware.",
-"O que o JavaScript disse para o HTML? Você me completa.",
-"Por que o JavaScript foi ao terapeuta? Porque tinha muitos callbacks."
-]
-
-// IA pequena
-let gerador
+// carregar IA
+let gerador = null
 
 async function carregarIA(){
-  gerador = await pipeline(
-    "text-generation",
-    "Xenova/distilgpt2"
-  )
-  console.log("IA carregada")
+  try{
+
+    console.log("carregando IA...")
+
+    gerador = await pipeline(
+      "text-generation",
+      "Xenova/distilgpt2",
+      { dtype: "q4" }
+    )
+
+    console.log("IA carregada")
+
+  }catch(e){
+
+    console.log("falha ao carregar IA")
+
+    gerador = null
+
+  }
 }
 
 carregarIA()
 
-app.post("/chat", async (req, res) => {
+// wikipedia
+async function wiki(termo){
 
-  let texto = req.body.msg
-  .toLowerCase()
-  .normalize("NFD")
-  .replace(/[\u0300-\u036f]/g, "")
+  try{
 
-  // aprender
-  if (texto.startsWith("aprender=")) {
+    let url =
+    "https://pt.wikipedia.org/api/rest_v1/page/summary/" +
+    encodeURIComponent(termo)
 
-    let dados = texto.replace("aprender=", "").split("|")
+    let r = await fetch(url)
 
-    if (dados.length == 2) {
+    let data = await r.json()
 
-      memoria[dados[0]] = dados[1]
+    return data.extract
 
-      fs.writeFileSync("memoria.json", JSON.stringify(memoria, null, 2))
+  }catch{
 
-      return res.json({ resposta: "Aprendi 👍" })
-
-    }
+    return null
 
   }
 
-  // piadas
-  if (texto.includes("piada")) {
+}
 
-    let piada = piadas[Math.floor(Math.random()*piadas.length)]
+app.post("/chat", async (req,res)=>{
 
-    return res.json({ resposta: piada })
+let texto = (req.body.msg || "").trim()
 
-  }
+if(!texto){
 
-  // pesquisa
-  if (texto.startsWith("pesquisar ")) {
+return res.json({resposta:"Digite algo."})
 
-    let busca = texto.replace("pesquisar ", "")
+}
 
-    let resultados = await google.search(busca)
+texto = texto
+.toLowerCase()
+.normalize("NFD")
+.replace(/[\u0300-\u036f]/g,"")
 
-    if (resultados.results.length > 0) {
+let user = req.session
 
-      return res.json({
-        resposta: resultados.results[0].title + " - " + resultados.results[0].description
-      })
+// salvar nome
+if(texto.startsWith("meu nome e ")){
 
-    }
+let nome = texto.replace("meu nome e ","")
 
-  }
+user.nome = nome
 
-  // memória
-  let perguntas = Object.keys(memoria)
+return res.json({resposta:"Prazer "+nome})
 
-  if (perguntas.length > 0) {
+}
 
-    let match = similarity.findBestMatch(texto, perguntas)
+// lembrar nome
+if(texto.includes("qual e meu nome")){
 
-    if (match.bestMatch.rating > 0.7) {
+if(user.nome){
 
-      return res.json({
-        resposta: memoria[match.bestMatch.target]
-      })
+return res.json({resposta:"Seu nome é "+user.nome})
 
-    }
+}
 
-  }
+return res.json({resposta:"Ainda não sei seu nome."})
 
-  // wikipedia
-  try {
+}
 
-    let url = "https://pt.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(texto)
+// aprender
+if(texto.startsWith("aprender=")){
 
-    let respostaWiki = await fetch(url)
+let dados = texto.replace("aprender=","").split("|")
 
-    let data = await respostaWiki.json()
+if(dados.length==2){
 
-    if (data.extract) {
+memoria[dados[0]] = dados[1]
 
-      return res.json({
-        resposta: data.extract.substring(0, 400)
-      })
+fs.writeFileSync(
+"memoria.json",
+JSON.stringify(memoria,null,2)
+)
 
-    }
+return res.json({resposta:"Aprendi 👍"})
 
-  } catch {}
+}
 
-  // IA
-  if (gerador) {
+}
 
-    let respostaIA = await gerador(texto, {
-      max_new_tokens: 30
-    })
+// fuzzy match
+let perguntas = Object.keys(memoria)
 
-    return res.json({
-      resposta: respostaIA[0].generated_text
-    })
+if(perguntas.length>0){
 
-  }
+let match = stringSimilarity.findBestMatch(texto,perguntas)
 
-  res.json({ resposta: "Ainda não sei responder isso." })
+if(match.bestMatch.rating>0.85){
+
+return res.json({
+resposta: memoria[match.bestMatch.target]
+})
+
+}
+
+}
+
+// piadas
+if(texto.includes("piada")){
+
+let p = piadas[Math.floor(Math.random()*piadas.length)]
+
+return res.json({resposta:p})
+
+}
+
+// google
+if(texto.startsWith("pesquisar ")){
+
+let busca = texto.replace("pesquisar ","")
+
+let r = await google.search(busca)
+
+if(r.results.length>0){
+
+return res.json({
+resposta:
+r.results[0].title +
+" - " +
+r.results[0].description
+})
+
+}
+
+}
+
+// wikipedia
+if(texto.startsWith("o que e") || texto.startsWith("quem e")){
+
+let termo = texto
+.replace("o que e","")
+.replace("quem e","")
+.trim()
+
+let resumo = await wiki(termo)
+
+if(resumo){
+
+return res.json({
+resposta: resumo.substring(0,400)
+})
+
+}
+
+}
+
+// IA local
+if(gerador){
+
+try{
+
+let r = await gerador(texto,{
+max_new_tokens:50
+})
+
+return res.json({
+resposta: r[0].generated_text
+})
+
+}catch{}
+
+}
+
+res.json({
+resposta:"Ainda não sei responder isso."
+})
+
+})
+
+app.get("/health",(req,res)=>{
+
+res.send("ok")
 
 })
 
 const PORT = process.env.PORT || 3000
 
-app.listen(PORT, () => {
-  console.log("GPT rodando na porta " + PORT)
+app.listen(PORT,()=>{
+
+console.log("GPT rodando porta "+PORT)
+
 })
