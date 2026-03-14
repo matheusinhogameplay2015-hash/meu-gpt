@@ -8,52 +8,41 @@ import { pipeline } from "@xenova/transformers"
 const app = express()
 
 app.use(express.json())
-app.use(express.urlencoded({ extended: true }))
+app.use(express.urlencoded({extended:true}))
 
 app.use(session({
-  secret: process.env.SESSION_SECRET || "segredo",
-  resave: false,
-  saveUninitialized: true
+  secret:"segredo123",
+  resave:false,
+  saveUninitialized:true
 }))
 
 // piadas
 const piadas = [
 "Por que o programador foi ao médico? Porque tinha muitos bugs.",
 "O que o JavaScript disse para o HTML? Você me completa.",
-"Por que o computador foi preso? Porque executou processos ilegais.",
-"Quantos programadores trocam uma lâmpada? Nenhum, é problema de hardware.",
-"Por que o programador confundiu Halloween e Natal? Porque OCT 31 = DEC 25."
+"Quantos programadores trocam uma lâmpada? Nenhum, é problema de hardware."
 ]
 
 // memória
 let memoria = {}
 
-if (fs.existsSync("memoria.json")) {
+if(fs.existsSync("memoria.json")){
   memoria = JSON.parse(fs.readFileSync("memoria.json"))
 }
 
-// carregar IA
+// IA
 let gerador = null
 
 async function carregarIA(){
   try{
-
-    console.log("carregando IA...")
-
     gerador = await pipeline(
       "text-generation",
       "Xenova/distilgpt2",
-      { dtype: "q4" }
+      {dtype:"q4"}
     )
-
     console.log("IA carregada")
-
-  }catch(e){
-
-    console.log("falha ao carregar IA")
-
-    gerador = null
-
+  }catch{
+    console.log("IA não carregou")
   }
 }
 
@@ -61,9 +50,7 @@ carregarIA()
 
 // wikipedia
 async function wiki(termo){
-
   try{
-
     let url =
     "https://pt.wikipedia.org/api/rest_v1/page/summary/" +
     encodeURIComponent(termo)
@@ -73,25 +60,20 @@ async function wiki(termo){
     let data = await r.json()
 
     return data.extract
-
   }catch{
-
     return null
-
   }
-
 }
 
-app.post("/chat", async (req,res)=>{
+app.post("/chat",async(req,res)=>{
 
 let texto = (req.body.msg || "").trim()
 
 if(!texto){
-
-return res.json({resposta:"Digite algo."})
-
+  return res.json({resposta:"Digite algo."})
 }
 
+// normalizar texto
 texto = texto
 .toLowerCase()
 .normalize("NFD")
@@ -100,13 +82,15 @@ texto = texto
 let user = req.session
 
 // salvar nome
-if(texto.startsWith("meu nome e ")){
+if(texto.includes("meu nome e")){
 
-let nome = texto.replace("meu nome e ","")
+let nome = texto.replace("meu nome e","").trim()
 
 user.nome = nome
 
-return res.json({resposta:"Prazer "+nome})
+return res.json({
+resposta:"Prazer em conhecer você "+nome
+})
 
 }
 
@@ -115,11 +99,26 @@ if(texto.includes("qual e meu nome")){
 
 if(user.nome){
 
-return res.json({resposta:"Seu nome é "+user.nome})
+return res.json({
+resposta:"Seu nome é "+user.nome
+})
+
+}else{
+
+return res.json({
+resposta:"Você ainda não me disse seu nome."
+})
 
 }
 
-return res.json({resposta:"Ainda não sei seu nome."})
+}
+
+// piada
+if(texto.includes("piada")){
+
+let p = piadas[Math.floor(Math.random()*piadas.length)]
+
+return res.json({resposta:p})
 
 }
 
@@ -138,12 +137,11 @@ JSON.stringify(memoria,null,2)
 )
 
 return res.json({resposta:"Aprendi 👍"})
-
 }
 
 }
 
-// fuzzy match
+// memória fuzzy
 let perguntas = Object.keys(memoria)
 
 if(perguntas.length>0){
@@ -153,44 +151,18 @@ let match = stringSimilarity.findBestMatch(texto,perguntas)
 if(match.bestMatch.rating>0.85){
 
 return res.json({
-resposta: memoria[match.bestMatch.target]
+resposta:memoria[match.bestMatch.target]
 })
 
 }
 
 }
 
-// piadas
-if(texto.includes("piada")){
-
-let p = piadas[Math.floor(Math.random()*piadas.length)]
-
-return res.json({resposta:p})
-
-}
-
-// google
-if(texto.startsWith("pesquisar ")){
-
-let busca = texto.replace("pesquisar ","")
-
-let r = await google.search(busca)
-
-if(r.results.length>0){
-
-return res.json({
-resposta:
-r.results[0].title +
-" - " +
-r.results[0].description
-})
-
-}
-
-}
-
-// wikipedia
-if(texto.startsWith("o que e") || texto.startsWith("quem e")){
+// wikipedia apenas se for pergunta
+if(
+texto.startsWith("o que e") ||
+texto.startsWith("quem e")
+){
 
 let termo = texto
 .replace("o que e","")
@@ -202,46 +174,45 @@ let resumo = await wiki(termo)
 if(resumo){
 
 return res.json({
-resposta: resumo.substring(0,400)
+resposta:resumo.substring(0,400)
 })
 
 }
 
 }
 
-// IA local
+// IA
 if(gerador){
 
 try{
 
 let r = await gerador(texto,{
-max_new_tokens:50
+max_new_tokens:40
 })
 
-return res.json({
-resposta: r[0].generated_text
-})
+let resp = r[0].generated_text
+.replace(texto,"")
+.trim()
+
+if(resp.length>3){
+
+return res.json({resposta:resp})
+
+}
 
 }catch{}
 
 }
 
+// fallback
 res.json({
-resposta:"Ainda não sei responder isso."
+resposta:"Ainda estou aprendendo. Pode me ensinar usando aprender=pergunta|resposta"
 })
-
-})
-
-app.get("/health",(req,res)=>{
-
-res.send("ok")
 
 })
 
 const PORT = process.env.PORT || 3000
 
 app.listen(PORT,()=>{
-
 console.log("GPT rodando porta "+PORT)
-
 })
