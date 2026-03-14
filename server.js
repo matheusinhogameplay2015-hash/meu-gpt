@@ -216,3 +216,6 @@ const PORT = process.env.PORT || 3000
 app.listen(PORT,()=>{
 console.log("GPT rodando porta "+PORT)
 })
+git add .
+git commit -m "atualizando gpt"
+git push
